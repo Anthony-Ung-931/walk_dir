@@ -1,3 +1,13 @@
+/**
+ * walk_dir.c
+ *
+ * Applies an function which returns an int to all contents in a directory.
+ * 
+ * Demonstrates the Visitor design pattern.
+ * Demonstrates usage of the POSIX directory API
+ * Demonstrates usage of dynamically-allocated memory
+ */
+
 #include <dirent.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -8,10 +18,15 @@
 
 
 int walk_dir(char* path, int flag_recursive, int (*fn)(char *));
-int print_path(char* path);
-void join_filename(char** target, char* path, char* filename);
+static int print_path(char* path);
+static void join_filename(char** target, char* path, char* filename);
+static void _opendir_REPORT_FAILURE();
 
 
+/**
+ * My driver program supplies a function that prints the filename,
+ * 	checks printf's return value, and returns it to the caller.
+ */
 int main(int argc, char** argv) {
 	char* path;
 	int flag_recursive;
@@ -19,7 +34,7 @@ int main(int argc, char** argv) {
 
 	if(argc != 2) {
 		printf("You must supply a path\n");
-		return 1;
+		return EXIT_FAILURE;
 	}
 	path = argv[1];
 	flag_recursive = 1;
@@ -27,19 +42,24 @@ int main(int argc, char** argv) {
 
 	walk_dir(path, flag_recursive, fn);
 
-	return 0;
+	return EXIT_SUCCESS;
 }
 
 
-int print_path(char* path) {
+static int print_path(char* path) {
 	if((printf("%s\n", path)) == 0) {
-		return 1;
+		return EXIT_FAILURE;
 	}
-	return 0;
+	return EXIT_SUCCESS;
 }
 
 
-void join_filename(char** target_buffer, char* path, char* filename) {
+/**
+ * Joins the path and the filename.
+ * **target_buffer is the address of the buffer that the path and filename
+ * 	are combined into.
+ */
+static void join_filename(char** target_buffer, char* path, char* filename) {
 	int nested_name_length;
 
 	nested_name_length = strlen(path) + 1 + strlen(filename) + 1;
@@ -48,6 +68,21 @@ void join_filename(char** target_buffer, char* path, char* filename) {
 	strcpy(*target_buffer, path);
 	strcat(*target_buffer, "/");
 	strcat(*target_buffer, filename);
+}
+
+
+static void _opendir_REPORT_FAILURE() {
+	switch (errno) {
+		case (EACCES):
+			perror("Permission denied");
+			break;
+		case (ENOENT):
+			perror("Directory does not exist");
+			break;
+		default:
+			perror("Unknown error");
+			break;
+	}
 }
 
 
@@ -66,24 +101,10 @@ int walk_dir(char* path, int flag_recursive, int (*fn)(char *)) {
 		return fn(path);
 	}
 
-	
-	directory = opendir(path);
-
-	if(directory == NULL) {
-		switch (errno) {
-			case (EACCES):
-				perror("Permission denied");
-				break;
-			case (ENOENT):
-				perror("Directory does not exist");
-				break;
-			default:
-				perror("Unknown error");
-				break;
-		}
+	if((directory = opendir(path)) == NULL) {
+		_opendir_REPORT_FAILURE(errno);
 		return EXIT_FAILURE;
 	}
-
 	
 	while((entry = readdir(directory)) != NULL) {
 		filename = entry->d_name;
@@ -104,7 +125,6 @@ int walk_dir(char* path, int flag_recursive, int (*fn)(char *)) {
 			error_number = walk_dir(nested_name, 0, fn);
 		}
 		else if (S_ISDIR(file_info.st_mode)) {
-			
 			error_number = walk_dir(nested_name, 1, fn);
 		}
 
@@ -113,6 +133,8 @@ int walk_dir(char* path, int flag_recursive, int (*fn)(char *)) {
 		if(error_number) {
 			printf("Error number [%d] received from %s\n", 
 				error_number, filename);
+			perror("");
+			return EXIT_FAILURE;
 		}
 	}
 
@@ -120,8 +142,8 @@ int walk_dir(char* path, int flag_recursive, int (*fn)(char *)) {
 	/* Returns nonzero on failure */
 	if(closedir(directory)) {
 		printf("Error closing directory");
-		return 1;
+		return EXIT_FAILURE;
 	}
 
-	return 0;
+	return EXIT_SUCCESS;
 }
